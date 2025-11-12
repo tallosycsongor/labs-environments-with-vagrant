@@ -1,0 +1,58 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+
+  # 100 GB dynamic disk (requires plugin: vagrant plugin install vagrant-disksize)
+  config.disksize.size = "100GB"
+
+  # Shared resources for all nodes
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus   = 2
+  end
+
+  # Common provisioning: create user 'kubeadmin' with password and sudo access
+  config.vm.provision "shell", inline: <<-'SHELL'
+    set -eux
+    id -u kubeadmin >/dev/null 2>&1 || useradd -m -s /bin/bash kubeadmin
+    echo "kubeadmin:kubepass123" | chpasswd
+    usermod -aG sudo kubeadmin
+    # (optional) enable SSH password login
+    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl restart ssh || systemctl restart sshd || true
+  SHELL
+
+  # Define cluster nodes
+  nodes = {
+    "master1" => { ip: "192.168.70.11", ssh_pf: 2201 },
+    "master2" => { ip: "192.168.70.12", ssh_pf: 2202 },
+    "master3" => { ip: "192.168.70.13", ssh_pf: 2203 },
+    "worker1" => { ip: "192.168.70.21", ssh_pf: 2211 },
+    "worker2" => { ip: "192.168.70.22", ssh_pf: 2212 },
+    "worker3" => { ip: "192.168.70.23", ssh_pf: 2213 },
+    "worker4" => { ip: "192.168.70.24", ssh_pf: 2214 },
+  }
+
+  nodes.each do |name, opts|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+
+      # NIC1: NAT + SSH port forwarding to host
+      node.vm.network "forwarded_port",
+        guest: 22, host: opts[:ssh_pf], id: "ssh-#{name}", auto_correct: true
+
+      # NIC2: host-only / private network for the cluster
+      node.vm.network "private_network", ip: opts[:ip]
+
+      node.vm.provider "virtualbox" do |vb|
+        vb.name = name
+      end
+
+      # Run the Kubernetes install script only on master1
+      if name == "master1"
+        node.vm.provision "shell",
+          path: "scripts/k8s-init.sh",
+          args: ["--pod-cidr", "10.244.0.0/16", "--master-ip", opts[:ip]]
+      end
+    end
+  end
+end
