@@ -1,8 +1,8 @@
 Vagrant.configure("2") do |config|
-  # Alap box (Ubuntu 22.04 ajánlott LFCS-hez)
+  # Main box (Ubuntu 22.04 )
   config.vm.box = "ubuntu/jammy64"
 
-  # Hely ahol a VM-eket tárolja
+  # VM Storage
   config.vm.provider "virtualbox" do |vb|
     vb.customize ["modifyvm", :id, "--groups", "/LFCS-LAB"]
     vb.memory = 1024
